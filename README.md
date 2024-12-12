@@ -9,9 +9,7 @@ I did experiment and wrote code based on 2 different weights from [ArcFace](http
 
 For arcface, you must download above insight face repo and just copy all of under reocognition-arcface_torch to ./arcface_torch. also, download [2pretrained weights(ms1mv3r50,glint360Kr50)](https://onedrive.live.com/?redeem=aHR0cHM6Ly8xZHJ2Lm1zL3UvcyFBc3dwc0RPMnRvTktxMGxXWTY5dk41OEdSNm13P2U9cDlPdjVk&id=4A83B6B633B029CC%215577&cid=4A83B6B633B029CC) and rename glint backbone to "gli_backbone.pth". both backbones are needed to move into ./arcface_torch/
 
-For AdaFace, download it by above link. copy all of under main repo to ./AdaFace/ or you know.
-
-download WebFace4M r50 pretrained model to ./AdaFace and rename it to "adaface_ir50_webface4m.ckpt"
+For AdaFace, download it by above link. copy all of under main repo to ./AdaFace/ or you know. download WebFace4M r50 pretrained model to ./AdaFace and rename it to "adaface_ir50_webface4m.ckpt"
 
 For facenet, you can simply use python library by pip install facenet-pytorch.
 ### Facial attribute transfer model
@@ -23,7 +21,7 @@ you can find detail setting of this model in [augmen.py](https://github.com/joon
 ### Face detection model
 For face allignment and face cropping, i used [retinaface-pytorch(3rd party implement)](https://github.com/supernotman/RetinaFace_Pytorch).
 
-download and copy all of under the main repo to ./RetinaFace_Pytorch and download pretrained weight under the same link and rename it to "model.pt".
+download and copy all of under the main repo to ./RetinaFace_Pytorch and download pretrained weight under the same directory with the same link and rename it to "model.pt".
 ### Requirements
 Check Requirements.txt
 
