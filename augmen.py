@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from torchvision import models,transforms
+from torchvision import transforms
 import sys
 sys.path.append("./STD_GAN/")
 
