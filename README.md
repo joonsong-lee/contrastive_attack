@@ -28,6 +28,7 @@ download and copy all of under the main repo to ./RetinaFace_Pytorch and downloa
 Check Requirements.txt
 
 ## Inference
+Adaface model is needed to get bgr image, there is additional line for Adaface. so you must set the key of Adaface is ada.
 ### Dataset
 if you wanna do single inference, there is no need to download extra datasets. but, if you wanna do some batch job. you need to modify code of run.py.
 
@@ -41,3 +42,5 @@ if you wanna change options, please check single_inference.py
 
 ### Batch job
 Use run.py and find options for experiment.
+
+
