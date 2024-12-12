@@ -3,7 +3,7 @@ This repo is for attacking black-box face swapping models by attacking face reco
 The reason why attack face recognition model is face recognition model is used as a feature extractor in face swapping model.
 
 ## Preparation
-If you wanna use my code and don't wanna modify anything. download all of belows and move all of files and directories to designated directory or you can just rename it to designated dir name.
+If you wanna use my code and don't wanna modify anything, download all of belows and move all of files and directories to designated directory or you can just rename it to designated dir name.
 ### Face Recognition models
 I did experiment and wrote code based on 2 different weights from [ArcFace](https://github.com/deepinsight/insightface/blob/master/recognition/arcface_torch/README.md) , [AdaFace](https://github.com/mk-minchul/AdaFace), [Facenet](https://github.com/timesler/facenet-pytorch).
 
