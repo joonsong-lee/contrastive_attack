@@ -52,7 +52,7 @@ def main(args):
     ada.load_state_dict(model_statedict)
     ada = ada.eval().to(device)
     resnet2 = iresnet50().to(device)
-    resnet2.load_state_dict(torch.load('.arcface_torch/gli_backbone.pth'))
+    resnet2.load_state_dict(torch.load('./arcface_torch/gli_backbone.pth'))
     resnet2.eval()
 
     facenet = InceptionResnetV1(pretrained='casia-webface').eval().to(device)
