@@ -1,5 +1,4 @@
 import sys
-sys.path.append('./QMagFace/')
 sys.path.append('./AdaFace/')
 sys.path.append('./arcface_torch')
 sys.path.append('./RetinaFace_Pytorch')
@@ -14,7 +13,7 @@ import cv2 as cv
 import argparse
 from arcface_torch.backbones.iresnet import iresnet50
 from RetinaFace_Pytorch import torchvision_model
-from .attack import * 
+from attack import * 
 import os
 from util import torch_to_cv,save_multi
 from facenet_pytorch import InceptionResnetV1
@@ -53,7 +52,7 @@ def main(args):
     ada.load_state_dict(model_statedict)
     ada = ada.eval().to(device)
     resnet2 = iresnet50().to(device)
-    resnet2.load_state_dict(torch.load('./gli_backbone.pth'))
+    resnet2.load_state_dict(torch.load('.arcface_torch/gli_backbone.pth'))
     resnet2.eval()
 
     facenet = InceptionResnetV1(pretrained='casia-webface').eval().to(device)
@@ -75,8 +74,7 @@ def main(args):
         attack = contrastive_opposite(retinaface,device,nets)
         pertur = attack.attack(img,1,iter=args.iter,eps=args.eps,lr=args.lr,img_size=args.img_size)
     
-    
-    save_single(img.to(device),pertur.to(device),args.save_path)
+    save_single(img.to(device),pertur.to(device),os.path.join(args.save_path,args.file_name))
 
 
 
@@ -89,7 +87,8 @@ parser.add_argument("--eps", type=int, default=16)
 parser.add_argument("--lr", type=float, default=0.001)  
 parser.add_argument("--img_size", type=int, default=256)  
 parser.add_argument("--attack_method", type=str, default="cont_opposite")  
-parser.add_argument("--save_path", type=str, default="/data/ljsong7/gradpj/result/single_inference/source4.jpg")
+parser.add_argument("--save_path", type=str, default="/data/ljsong7/gradpj/debug")
+parser.add_argument("--file_name", type=str, default="asset.jpg")
 parser.add_argument("--ipath", type=str, default="/data/ljsong7/gradpj/musk.jpg") 
 parser.add_argument("--victim", type=str, default=None) 
 args = parser.parse_args()

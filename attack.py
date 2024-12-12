@@ -358,10 +358,8 @@ class contrastive_attack(Base):
 
 class contrastive_opposite(contrastive_attack):
     def __init__(self,retina,device,nets):
-        super().__init__(retina,device)
-        self.nets = nets
-        self.sg = std_gan(device)
-        self.ce = nn.CrossEntropyLoss().to(self.device)
+        super().__init__(retina,device,nets)
+
 
     def cont_loss(self,feat,target):
         batch_size = feat.shape[0]
