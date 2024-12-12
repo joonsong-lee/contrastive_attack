@@ -13,7 +13,7 @@ import cv2 as cv
 import argparse
 from arcface_torch.backbones.iresnet import iresnet50
 from RetinaFace_Pytorch import torchvision_model
-from .attack import * 
+from attack import * 
 import os
 from util import torch_to_cv,save_multi
 from facenet_pytorch import InceptionResnetV1
