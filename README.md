@@ -36,11 +36,15 @@ i did experiment with huggingface datasets library. if you wanna do with it, you
 ### Single inference
 ```
 
-python single_inference.py --i_path /data/source.py --save_path /data/result
+python single_inference.py --i_path /data/source.py --save_path /data/result --file_name res.jpg
 ```
 if you wanna change options, please check single_inference.py
 
 ### Batch job
 Use run.py and find options for experiment.
 
+### Test with swapping model
+I did experiment on Facedancer,SimSwap and Hififace. if your model uses face recognition model as a feature extractor for source image, it will work but, sadly perturbation is visible.
+
+you can easily check the effect on [face dancer on huggingface](https://huggingface.co/spaces/felixrosberg/face-swap).
 
