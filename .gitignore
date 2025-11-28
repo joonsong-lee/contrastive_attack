@@ -1,0 +1,13 @@
+# Ignore everything
+*
+
+# But do not ignore directories, allows to check the content inside them
+!*/
+
+# Do not ignore Python script and sh files
+!*.py
+!.gitignore
+/AdaFace
+/arcface_torch
+/RetinaFace_Pytorch
+/STD_GAN
