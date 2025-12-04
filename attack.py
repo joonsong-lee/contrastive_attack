@@ -140,7 +140,7 @@ class contrastive_opposite(nn.Module):
 
     def attack(self,batch_o,batch_size=32,img_size=256,iter=500,lr=0.001,eps=16):
         new_shape = int(112)
-        ort_list,feat_list,aug_feats,affines = self.ready_made_attack(batch_o)
+        ort_list,feat_list,aug_feats,affines = self.ready_made_attack(batch_o.to(self.device))
         batch = ((batch_o/255. - 0.5) /0.5).to(self.device)
         g = torch.zeros_like(batch, requires_grad=True).to(self.device)
         delta = torch.zeros_like(batch,requires_grad=True).to(self.device)
