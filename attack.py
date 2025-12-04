@@ -12,9 +12,8 @@ import gc
 
 
 
-def face_detection(batch_o,retinaface,device):
+def face_detection(batch,retinaface,device):
     boxes,scores,landmarks = [],[],[]
-    batch = (batch_o*0.5+0.5)*255.
     img_h, img_w = batch.shape[2], batch.shape[3]
     with torch.no_grad():
         picked_boxes, picked_landmarks, picked_scores = eval_widerface.get_detections(batch, retinaface, score_threshold=0.5, iou_threshold=0.3)
@@ -141,8 +140,8 @@ class contrastive_opposite(nn.Module):
 
     def attack(self,batch_o,batch_size=32,img_size=256,iter=500,lr=0.001,eps=16):
         new_shape = int(112)
+        ort_list,feat_list,aug_feats,affines = self.ready_made_attack(batch_o)
         batch = ((batch_o/255. - 0.5) /0.5).to(self.device)
-        ort_list,feat_list,aug_feats,affines = self.ready_made_attack(batch)
         g = torch.zeros_like(batch, requires_grad=True).to(self.device)
         delta = torch.zeros_like(batch,requires_grad=True).to(self.device)
         torch.cuda.empty_cache()
