@@ -5,9 +5,6 @@ sys.path.remove('./AdaFace/')
 sys.path.append('./arcface_torch')
 from arcface_torch.backbones.iresnet import iresnet50
 sys.path.remove('./arcface_torch')
-sys.path.append('./RetinaFace_Pytorch')
-from RetinaFace_Pytorch import torchvision_model
-sys.path.remove('./RetinaFace_Pytorch')
 from datasets import load_dataset
 from torch.utils.data import DataLoader
 import torch
@@ -46,13 +43,6 @@ def main(args):
     dataloader = DataLoader(ds, collate_fn=collate_fn, batch_size=batch_size)
     device = torch.device(args.device)
     resnet = iresnet50().to(device)
-    return_layers = {'layer2':1,'layer3':2,'layer4':3}
-    retinaface = torchvision_model.create_retinaface(return_layers)
-    retina_dict = retinaface.state_dict()
-    pre_state_dict = torch.load(os.path.join('./RetinaFace_Pytorch/model.pt'))
-    pretrained_dict = {k[7:]: v for k, v in pre_state_dict.items() if k[7:] in retina_dict}
-    retinaface.load_state_dict(pretrained_dict)
-    retinaface = retinaface.to(device)
     resnet.load_state_dict(torch.load('./arcface_torch/backbone.pth'))
     resnet.eval()
     ada = adanet.build_model('ir_50')
@@ -65,9 +55,9 @@ def main(args):
     resnet2.eval()
 
     facenet = InceptionResnetV1(pretrained='casia-webface').eval().to(device)
-    nets = nn.ModuleDict({"arc":resnet2,"arc2":resnet,"ada":ada,"facenet":facenet})
-    attack = contrastive_opposite(retinaface,device,nets)
-    #attack = direct_attack(retinaface,device,nets)
+    nets = nn.ModuleDict({"arc":resnet2,"arc2":resnet,"ada":ada})#,"facenet":facenet})
+    attack = contrastive_opposite(device,nets)
+    #attack = direct_attack(device,nets)
     os.makedirs(args.save_path,exist_ok=True)
     
     for index,batch in enumerate(tqdm(dataloader)):
@@ -80,7 +70,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--device", type=str, default="cuda:0")          
 parser.add_argument("--batch_size", type=int, default=16)           
 parser.add_argument("--iter", type=int, default=300)  
-parser.add_argument("--eps", type=int, default=16)  
+parser.add_argument("--eps", type=int, default=8)  
 parser.add_argument("--lr", type=float, default=0.001)  
 parser.add_argument("--img_size", type=int, default=256)  
 parser.add_argument("--attack_method", type=str, default="cont_opposite")  

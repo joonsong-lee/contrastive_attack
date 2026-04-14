@@ -1,4 +1,4 @@
-from util import differentiable_warping
+from util import resize_to_recognition, random_resize_crop
 import os
 import scipy.stats as st
 import torch
@@ -6,52 +6,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
 import numpy as np
-from RetinaFace_Pytorch import eval_widerface
 from augmen import std_gan
 import gc
 from matplotlib import pyplot as plt
 
 
-def face_detection(batch,retinaface,device):
-    boxes,scores,landmarks = [],[],[]
-    img_h, img_w = batch.shape[2], batch.shape[3]
-    with torch.no_grad():
-        picked_boxes, picked_landmarks, picked_scores = eval_widerface.get_detections(batch, retinaface, score_threshold=0.5, iou_threshold=0.3)
-        for b,s,l in zip(picked_boxes,picked_scores,picked_landmarks):
-            if(s==None):
-                print('nodetect_retina')
-                box = torch.tensor([0,0,img_w, img_h],dtype=torch.float32).to(device)
-                landmark = torch.tensor([
-                    [img_w * 0.3, img_h * 0.3], # Left Eye
-                    [img_w * 0.7, img_h * 0.3], # Right Eye
-                    [img_w * 0.5, img_h * 0.5], # Nose
-                    [img_w * 0.3, img_h * 0.7], # Left Mouth
-                    [img_w * 0.7, img_h * 0.7]  # Right Mouth
-                ], dtype=torch.float32).to(device)
-                boxes.append(box)
-                landmarks.append(landmark)
-            else :
-                ss = torch.squeeze(s,dim=0)
-                bb = torch.squeeze(b,dim=0)
-                if(ss.shape[0] >1) :
-                    boxes.append(bb[torch.argmax(ss)].squeeze(0))
-                    landmarks.append(l[torch.argmax(ss)].squeeze(0).view(5,2))
-
-                else :
-                    boxes.append(bb.squeeze(0))
-                    landmarks.append(l.squeeze(0).view(5,2))
-    boxes = torch.stack(boxes,dim=0)
-    landmarks = torch.stack(landmarks,dim=0)
-    
-    return boxes,landmarks
-
-
 class contrastive_opposite(nn.Module):
-    def __init__(self,retina,device,nets):
+    def __init__(self,device,nets):
         super(contrastive_opposite,self).__init__()
         self.mse_loss = nn.MSELoss()
         self.csloss = nn.CosineEmbeddingLoss()
-        self.retinaface = retina
         self.device = device
         self.ce = nn.CrossEntropyLoss()
         self.nets = nets.to(device)
@@ -103,9 +67,8 @@ class contrastive_opposite(nn.Module):
     def ready_made_attack(self,batch):
         with torch.no_grad():
             augmented = self.sg.augment_full(batch).to(self.device)
-            b_boxs,b_lnds = face_detection(batch,self.retinaface,self.device)
-            aug_box,aug_lnds = face_detection(augmented,self.retinaface,self.device)
-        blob,affines = differentiable_warping(self.device,batch, b_boxs,b_lnds=b_lnds,angle=None,affine_arrays=None,mi_transform=False)
+        num_aug = augmented.shape[0] // batch.shape[0]
+        blob = resize_to_recognition(batch)
         blob=torch.cat([blob,blob.fliplr()],dim=0)
         blob.div_(255).sub_(0.5).div_(0.5)
         feat_list,ort_list = [],[]
@@ -117,12 +80,11 @@ class contrastive_opposite(nn.Module):
             feat = torch.cat([feat[:batch.shape[0]],feat[batch.shape[0]:]],dim=1)
             feat_list.append(feat.detach().clone())
         for feat in feat_list:
-            ort = -1*feat      # +(torch.randn(feat.shape).to(device)/feat.sum())/feat.shape[0]
+            ort = -1*feat
             ort = F.normalize(ort)
             feat = F.normalize(feat)
             ort_list.append(ort.detach().clone())
-        #del blob,ada_blob,feat,ort
-        aug_blob,_ = differentiable_warping(self.device,augmented, aug_box,b_lnds=aug_lnds,angle=None,affine_arrays=None,mi_transform=False)
+        aug_blob = resize_to_recognition(augmented)
         aug_blob=torch.cat([aug_blob,aug_blob.fliplr()],dim=0)
         aug_blob = aug_blob.div_(255).sub_(0.5).div_(0.5)
         aug_feats = []
@@ -131,42 +93,40 @@ class contrastive_opposite(nn.Module):
                 ada_blob = self.rgb2bgr(aug_blob)
                 feat,_ = self.nets[key](ada_blob)
             else: feat = self.nets[key](aug_blob)
-            feat = torch.cat([feat[:batch.shape[0]*4],feat[batch.shape[0]*4:]],dim=1)
+            feat = torch.cat([feat[:batch.shape[0]*num_aug],feat[batch.shape[0]*num_aug:]],dim=1)
             feat = F.normalize(feat)
             aug_feats.append(feat.detach().clone())
 
-        return ort_list,feat_list,aug_feats,affines
+        return ort_list,feat_list,aug_feats
 
 
     def attack(self,batch_o,batch_size=32,img_size=256,iter=500,lr=0.001,eps=16):
-        new_shape = int(112)
-        ort_list,feat_list,aug_feats,affines = self.ready_made_attack(batch_o.to(self.device))
+        ort_list,feat_list,aug_feats = self.ready_made_attack(batch_o.to(self.device))
         feat_list = torch.stack(feat_list,dim=0)
         batch = ((batch_o/255. - 0.5) /0.5).to(self.device)
-        g = torch.zeros_like(batch, requires_grad=True).to(self.device)
+        g = torch.zeros_like(batch).to(self.device)
         delta = torch.zeros_like(batch,requires_grad=True).to(self.device)
         sims = np.zeros((len(self.nets),iter))
         torch.cuda.empty_cache()
         for k in range (iter) :
             idx = 0
             b_t = batch + delta
-            b_t, _ = differentiable_warping(self.device,b_t, b_boxs=None,b_lnds=None,angle=None,affine_arrays=affines,mi_transform=True)
+            b_t = random_resize_crop(b_t)
             b_t = torch.cat([b_t,b_t.fliplr()],dim=0)
-            loss = torch.zeros(len(self.nets))
+            losses = []
             new_feats = torch.zeros_like(feat_list)
             for key in self.nets.keys():
                 if(key =='ada'):
-                    loss[idx],new_feats[idx]=self.flow_cont(b_t,self.nets[key],ort_list[idx],feat_list[idx],aug_feats[idx],batch_size,True)
-                    idx+=1
+                    l,new_feats[idx]=self.flow_cont(b_t,self.nets[key],ort_list[idx],feat_list[idx],aug_feats[idx],batch_size,True)
                 else:
-                    loss[idx],new_feats[idx]=self.flow_cont(b_t,self.nets[key],ort_list[idx],feat_list[idx],aug_feats[idx],batch_size,False)
-                    idx+=1
-            constraint = self.mse_loss(batch,batch+delta)
-            out = loss.mean() + 0.1*constraint
+                    l,new_feats[idx]=self.flow_cont(b_t,self.nets[key],ort_list[idx],feat_list[idx],aug_feats[idx],batch_size,False)
+                losses.append(l)
+                idx+=1
+            out = torch.stack(losses).mean()
             #print(out)
             out.backward()
             grad_c = delta.grad.clone()
-            grad_c = F.conv2d(grad_c,self.kernel,padding=5//2,groups=3)
+            #grad_c = F.conv2d(grad_c,self.kernel,padding=5//2,groups=3)
             norm_grad = torch.norm(grad_c,p=1,dim=(1,2,3),keepdim=True)
             g = g + grad_c/norm_grad
             delta.grad.zero_()
@@ -202,13 +162,11 @@ class contrastive_opposite(nn.Module):
         return delta.data * 127.5
 
 class direct_attack(contrastive_opposite):
-    def __init__(self,retina,device,nets):
-        super(direct_attack,self).__init__(retina,device,nets)
-    
+    def __init__(self,device,nets):
+        super(direct_attack,self).__init__(device,nets)
+
     def ready_made_attack(self, batch):
-        with torch.no_grad():
-            b_boxs,b_lnds = face_detection(batch,self.retinaface,self.device)
-        blob,affines = differentiable_warping(self.device,batch, b_boxs,b_lnds=b_lnds,angle=None,affine_arrays=None,mi_transform=False)
+        blob = resize_to_recognition(batch)
         blob=torch.cat([blob,blob.fliplr()],dim=0)
         blob.div_(255).sub_(0.5).div_(0.5)
         feat_list = []
@@ -225,7 +183,7 @@ class direct_attack(contrastive_opposite):
         targets = torch.argmin(sim_mat,dim=2)
         sorted_feats = feats[torch.arange(feats.shape[0]).unsqueeze(1),targets]
 
-        return sorted_feats,affines,feats
+        return sorted_feats,feats
     
     def flow(self,b_t,net,target,is_ada):
         if(is_ada):
@@ -239,28 +197,27 @@ class direct_attack(contrastive_opposite):
         return loss,feat
     
     def attack(self,batch_o,batch_size=32,img_size=256,iter=500,lr=0.001,eps=16):
-        new_shape = int(112)
-        target,affines,feats = self.ready_made_attack(batch_o.to(self.device))
+        target,feats = self.ready_made_attack(batch_o.to(self.device))
         batch = ((batch_o/255. - 0.5) /0.5).to(self.device)
-        g = torch.zeros_like(batch, requires_grad=True).to(self.device)
+        g = torch.zeros_like(batch).to(self.device)
         delta = torch.zeros_like(batch,requires_grad=True).to(self.device)
         sims = np.zeros((len(self.nets),iter))
         torch.cuda.empty_cache()
         for k in range (iter) :
             idx = 0
             b_t = batch + delta
-            b_t, _ = differentiable_warping(self.device,b_t, b_boxs=None,b_lnds=None,angle=None,affine_arrays=affines,mi_transform=True)
+            b_t = random_resize_crop(b_t)
             b_t = torch.cat([b_t,b_t.fliplr()],dim=0)
-            loss = torch.zeros(len(self.nets))
+            losses = []
             new_feats = torch.zeros_like(feats)
             for key in self.nets.keys():
                 if(key =='ada'):
-                    loss[idx],new_feats[idx]=self.flow(b_t,self.nets[key],target,True)
-                    idx+=1
+                    l,new_feats[idx]=self.flow(b_t,self.nets[key],target,True)
                 else:
-                    loss[idx],new_feats[idx]=self.flow(b_t,self.nets[key],target,False)
-                    idx+=1
-            out = loss.mean() 
+                    l,new_feats[idx]=self.flow(b_t,self.nets[key],target,False)
+                losses.append(l)
+                idx+=1
+            out = torch.stack(losses).mean()
             #print(out)
             out.backward()
             grad_c = delta.grad.clone()
