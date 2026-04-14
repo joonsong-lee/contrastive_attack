@@ -1,5 +1,5 @@
 from util import differentiable_warping
-
+import os
 import scipy.stats as st
 import torch
 import torch.nn as nn
@@ -9,7 +9,7 @@ import numpy as np
 from RetinaFace_Pytorch import eval_widerface
 from augmen import std_gan
 import gc
-
+from matplotlib import pyplot as plt
 
 
 def face_detection(batch,retinaface,device):
@@ -57,9 +57,9 @@ class contrastive_opposite(nn.Module):
         self.nets = nets.to(device)
         self.sg = std_gan(device)
         self.ce = nn.CrossEntropyLoss().to(self.device)
-        self.kernel = self.gkern(klen=15, nsig=3)
+        self.kernel = self.gkern(klen=5, nsig=1.0)
 
-    def gkern(self,klen=15, nsig=3):
+    def gkern(self,klen=5, nsig=1.0):
         """Returns a 2D Gaussian kernel array."""
         x = np.linspace(-nsig, nsig, klen)
         kern1d = st.norm.pdf(x)
@@ -83,7 +83,7 @@ class contrastive_opposite(nn.Module):
         labels = labels[:batch_size]
         sim = F.linear(feat,target)
         logit = sim[labels.bool()].view(labels.shape[0],-1).to(self.device)
-        logit = logit * s
+        logit = logit *s
         labels = torch.zeros(logit.shape[0],dtype = torch.long).to(self.device)
         loss = self.ce(logit,labels)
         return loss
@@ -98,7 +98,7 @@ class contrastive_opposite(nn.Module):
         feat = torch.cat([feat[:batch_size],feat[batch_size:]],dim=1)
         feat = F.normalize(feat)
         loss = self.cont_loss(feat,target)
-        return loss
+        return loss,feat
 
     def ready_made_attack(self,batch):
         with torch.no_grad():
@@ -141,9 +141,11 @@ class contrastive_opposite(nn.Module):
     def attack(self,batch_o,batch_size=32,img_size=256,iter=500,lr=0.001,eps=16):
         new_shape = int(112)
         ort_list,feat_list,aug_feats,affines = self.ready_made_attack(batch_o.to(self.device))
+        feat_list = torch.stack(feat_list,dim=0)
         batch = ((batch_o/255. - 0.5) /0.5).to(self.device)
         g = torch.zeros_like(batch, requires_grad=True).to(self.device)
         delta = torch.zeros_like(batch,requires_grad=True).to(self.device)
+        sims = np.zeros((len(self.nets),iter))
         torch.cuda.empty_cache()
         for k in range (iter) :
             idx = 0
@@ -151,19 +153,20 @@ class contrastive_opposite(nn.Module):
             b_t, _ = differentiable_warping(self.device,b_t, b_boxs=None,b_lnds=None,angle=None,affine_arrays=affines,mi_transform=True)
             b_t = torch.cat([b_t,b_t.fliplr()],dim=0)
             loss = torch.zeros(len(self.nets))
+            new_feats = torch.zeros_like(feat_list)
             for key in self.nets.keys():
                 if(key =='ada'):
-                    loss[idx]=self.flow_cont(b_t,self.nets[key],ort_list[idx],feat_list[idx],aug_feats[idx],batch_size,True)
+                    loss[idx],new_feats[idx]=self.flow_cont(b_t,self.nets[key],ort_list[idx],feat_list[idx],aug_feats[idx],batch_size,True)
                     idx+=1
                 else:
-                    loss[idx]=self.flow_cont(b_t,self.nets[key],ort_list[idx],feat_list[idx],aug_feats[idx],batch_size,False)
+                    loss[idx],new_feats[idx]=self.flow_cont(b_t,self.nets[key],ort_list[idx],feat_list[idx],aug_feats[idx],batch_size,False)
                     idx+=1
             constraint = self.mse_loss(batch,batch+delta)
             out = loss.mean() + 0.1*constraint
             #print(out)
             out.backward()
             grad_c = delta.grad.clone()
-            grad_c = F.conv2d(grad_c,self.kernel,padding=15//2,groups=3)
+            grad_c = F.conv2d(grad_c,self.kernel,padding=5//2,groups=3)
             norm_grad = torch.norm(grad_c,p=1,dim=(1,2,3),keepdim=True)
             g = g + grad_c/norm_grad
             delta.grad.zero_()
@@ -171,5 +174,128 @@ class contrastive_opposite(nn.Module):
             delta.data = delta.data.clamp(-eps/127 ,eps/127)
             delta.data = ((batch + delta.data)).clamp(-1,1) - batch
             delta.data = delta.data
+            with torch.no_grad():
+                current_sim = F.cosine_similarity(new_feats, feat_list, dim=2)
+                current_sim = current_sim.mean(dim=1).cpu().numpy()
+                sims[:,k] = current_sim
+        plt.figure(figsize=(10, 6))
+        x_axis = np.arange(sims.shape[1])
+        
+        # 모델 Key 가져오기
+        model_keys = list(self.nets.keys())
+        
+        # 각 모델별로 선 그리기
+        for i in range(sims.shape[0]):
+            label_name = model_keys[i] if i < len(model_keys) else f"Model {i}"
+            plt.plot(x_axis, sims[i], label=label_name)
+        
+        plt.title("Cosine Similarity Degradation during Attack")
+        plt.xlabel("Iterations")
+        plt.ylabel("Avg Cosine Similarity")
+        plt.legend(loc='upper right', bbox_to_anchor=(1.15, 1)) # 범례가 그래프 가리지 않게 밖으로
+        plt.grid(True, linestyle='--', alpha=0.6)
+        plt.tight_layout()
+        temp = os.listdir('./')
+        temp2 = [i for i in temp if i.startswith('cont_flow')]
+        plt.savefig(f'./cont_flow_{len(temp2)}.png', dpi=300)
+        plt.close() # 메모리 해제
         return delta.data * 127.5
 
+class direct_attack(contrastive_opposite):
+    def __init__(self,retina,device,nets):
+        super(direct_attack,self).__init__(retina,device,nets)
+    
+    def ready_made_attack(self, batch):
+        with torch.no_grad():
+            b_boxs,b_lnds = face_detection(batch,self.retinaface,self.device)
+        blob,affines = differentiable_warping(self.device,batch, b_boxs,b_lnds=b_lnds,angle=None,affine_arrays=None,mi_transform=False)
+        blob=torch.cat([blob,blob.fliplr()],dim=0)
+        blob.div_(255).sub_(0.5).div_(0.5)
+        feat_list = []
+        for key in self.nets.keys():
+            if(key=='ada'):
+                ada_blob = self.rgb2bgr(blob)
+                feat,_ = self.nets[key](ada_blob)
+            else: feat = self.nets[key](blob)
+            feat = torch.cat([feat[:batch.shape[0]],feat[batch.shape[0]:]],dim=1)
+            feat_list.append(feat.detach().clone())
+        feats = torch.stack(feat_list,dim=0)
+        feats_norm = F.normalize(feats,p=2,dim=2)
+        sim_mat = torch.bmm(feats_norm,feats_norm.permute(0,2,1))
+        targets = torch.argmin(sim_mat,dim=2)
+        sorted_feats = feats[torch.arange(feats.shape[0]).unsqueeze(1),targets]
+
+        return sorted_feats,affines,feats
+    
+    def flow(self,b_t,net,target,is_ada):
+        if(is_ada):
+            ada_bt = self.rgb2bgr(b_t)
+            feat,_ = net(ada_bt)
+        else:
+            feat = net(b_t)
+        feat = torch.cat([feat[:b_t.shape[0]//2],feat[b_t.shape[0]//2:]],dim=1)
+        loss = F.cosine_similarity(feat, target, dim=1).mean()
+        loss = -1*loss
+        return loss,feat
+    
+    def attack(self,batch_o,batch_size=32,img_size=256,iter=500,lr=0.001,eps=16):
+        new_shape = int(112)
+        target,affines,feats = self.ready_made_attack(batch_o.to(self.device))
+        batch = ((batch_o/255. - 0.5) /0.5).to(self.device)
+        g = torch.zeros_like(batch, requires_grad=True).to(self.device)
+        delta = torch.zeros_like(batch,requires_grad=True).to(self.device)
+        sims = np.zeros((len(self.nets),iter))
+        torch.cuda.empty_cache()
+        for k in range (iter) :
+            idx = 0
+            b_t = batch + delta
+            b_t, _ = differentiable_warping(self.device,b_t, b_boxs=None,b_lnds=None,angle=None,affine_arrays=affines,mi_transform=True)
+            b_t = torch.cat([b_t,b_t.fliplr()],dim=0)
+            loss = torch.zeros(len(self.nets))
+            new_feats = torch.zeros_like(feats)
+            for key in self.nets.keys():
+                if(key =='ada'):
+                    loss[idx],new_feats[idx]=self.flow(b_t,self.nets[key],target,True)
+                    idx+=1
+                else:
+                    loss[idx],new_feats[idx]=self.flow(b_t,self.nets[key],target,False)
+                    idx+=1
+            out = loss.mean() 
+            #print(out)
+            out.backward()
+            grad_c = delta.grad.clone()
+            grad_c = F.conv2d(grad_c,self.kernel,padding=5//2,groups=3)
+            norm_grad = torch.norm(grad_c,p=1,dim=(1,2,3),keepdim=True)
+            g = g + grad_c/norm_grad
+            delta.grad.zero_()
+            delta.data = delta.data - lr *torch.sign(g)
+            delta.data = delta.data.clamp(-eps/127 ,eps/127)
+            delta.data = ((batch + delta.data)).clamp(-1,1) - batch
+            delta.data = delta.data
+            with torch.no_grad():
+                current_sim = F.cosine_similarity(new_feats, feats, dim=2)
+                current_sim = current_sim.mean(dim=1).cpu().numpy()
+                sims[:,k] = current_sim
+        plt.figure(figsize=(10, 6))
+        x_axis = np.arange(sims.shape[1])
+        
+        # 모델 Key 가져오기
+        model_keys = list(self.nets.keys())
+        
+        # 각 모델별로 선 그리기
+        for i in range(sims.shape[0]):
+            label_name = model_keys[i] if i < len(model_keys) else f"Model {i}"
+            plt.plot(x_axis, sims[i], label=label_name)
+        
+        plt.title("Cosine Similarity Degradation during Attack")
+        plt.xlabel("Iterations")
+        plt.ylabel("Avg Cosine Similarity")
+        plt.legend(loc='upper right', bbox_to_anchor=(1.15, 1)) # 범례가 그래프 가리지 않게 밖으로
+        plt.grid(True, linestyle='--', alpha=0.6)
+        plt.tight_layout()
+        temp = os.listdir('./')
+        temp2 = [i for i in temp if i.startswith('normal_flow')]
+        plt.savefig(f'./normal_flow_{len(temp2)}.png', dpi=300)
+        plt.close() # 메모리 해제
+
+        return delta.data * 127.5

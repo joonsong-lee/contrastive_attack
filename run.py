@@ -67,6 +67,7 @@ def main(args):
     facenet = InceptionResnetV1(pretrained='casia-webface').eval().to(device)
     nets = nn.ModuleDict({"arc":resnet2,"arc2":resnet,"ada":ada,"facenet":facenet})
     attack = contrastive_opposite(retinaface,device,nets)
+    #attack = direct_attack(retinaface,device,nets)
     os.makedirs(args.save_path,exist_ok=True)
     
     for index,batch in enumerate(tqdm(dataloader)):
@@ -79,7 +80,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--device", type=str, default="cuda:0")          
 parser.add_argument("--batch_size", type=int, default=16)           
 parser.add_argument("--iter", type=int, default=300)  
-parser.add_argument("--eps", type=int, default=8)  
+parser.add_argument("--eps", type=int, default=16)  
 parser.add_argument("--lr", type=float, default=0.001)  
 parser.add_argument("--img_size", type=int, default=256)  
 parser.add_argument("--attack_method", type=str, default="cont_opposite")  

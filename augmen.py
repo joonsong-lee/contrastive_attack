@@ -6,7 +6,7 @@ sys.path.append("./STD_GAN/")
 
 from STD_GAN.global_setting import MODEL_ROOT_DIR
 import os
-from STD_GAN import torchlib,config
+from STD_GAN import config
 import STD_GAN.model as stdgan
 
 class std_gan():
