@@ -55,15 +55,16 @@ def main(args):
         victim = load_single_img(args.victim)
         victim = torchvision.transforms.functional.resize(victim,(256,256))
         if(args.attack_method == "rec_ensemble"):
-            attack = direct_attack(device,nets)
+            attack = direct_attack(device,nets,lpips_weight=args.lpips_weight)
+            batch = torch.cat((img,victim),dim=0)
+            res = attack.attack(batch,2,iter=args.iter,eps=args.eps,lr=args.lr,img_size=args.img_size)
+            pertur = res[0].clone()
         elif(args.attack_method =="cont"):
-            attack = contrastive_opposite(device,nets)
-        batch = torch.cat((img,victim),dim=0)
-        res = attack.attack(batch,2,iter=args.iter,eps=args.eps,lr=args.lr,img_size=args.img_size)
-        pertur = res[0].clone()
+            attack = contrastive_opposite(device,nets,lpips_weight=args.lpips_weight)
+            pertur = attack.attack(img,victim,1,iter=args.iter,eps=args.eps,lr=args.lr,img_size=args.img_size)
     else:
-        attack = contrastive_opposite(device,nets)
-        pertur = attack.attack(img,1,iter=args.iter,eps=args.eps,lr=args.lr,img_size=args.img_size)
+        attack = contrastive_opposite(device,nets,lpips_weight=args.lpips_weight)
+        pertur = attack.attack(img,img,1,iter=args.iter,eps=args.eps,lr=args.lr,img_size=args.img_size)
     
     save_single(img.to(device),pertur.to(device),os.path.join(args.save_path,args.file_name))
 
@@ -80,6 +81,8 @@ parser.add_argument("--attack_method", type=str, default="cont_opposite")
 parser.add_argument("--save_path", type=str, default="/data/ljsong7/gradpj/debug")
 parser.add_argument("--file_name", type=str, default="asset.jpg")
 parser.add_argument("--ipath", type=str, default="/data/ljsong7/gradpj/musk.jpg") 
-parser.add_argument("--victim", type=str, default=None) 
+parser.add_argument("--victim", type=str, default=None,
+                    help="For --attack_method=cont: a second photo of the SAME identity as --ipath (used as the negative-pair reference). For rec_ensemble: the victim identity image.")
+parser.add_argument("--lpips_weight", type=float, default=0.1)
 args = parser.parse_args()
 main(args)
