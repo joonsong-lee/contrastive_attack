@@ -1,6 +1,6 @@
 # contrastive_attack
 This repo is for attacking black-box face swapping models by attacking face recognition models.
-You can check the report for this repo at {Contrastive_attack_for_deepfake_protection.pdf}(here)
+You can check the report for this repo at [here](Contrastive_attack_for_deepfake_protection.pdf)
 
 ## Preparation
 If you wanna use my code and don't wanna modify anything, download all of belows and move all of files and directories to designated directory or you can just rename it to designated dir name.
