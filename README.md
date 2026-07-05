@@ -12,12 +12,7 @@ For arcface, you must download above insight face repo and just copy all of unde
 For AdaFace, download it by above link. copy all of under main repo to ./AdaFace/ or you know. download WebFace4M r50 pretrained model to ./AdaFace and rename it to "adaface_ir50_webface4m.ckpt"
 
 For facenet, you can simply use python library by pip install facenet-pytorch.
-### Facial attribute transfer model
-I did experiment and wrote code based on [STD-GAN](https://github.com/XuyangGuo/STD-GAN).
 
-download and copy all of under the main repo to ./STD_GAN and follow the instruction of preparation including pretrained model on above repo.
-
-you can find detail setting of this model in [augmen.py](https://github.com/joonsong-lee/contrastive_attack/blob/main/augmen.py).
 ### Face detection model
 For face allignment and face cropping, i used [retinaface-pytorch(3rd party implement)](https://github.com/supernotman/RetinaFace_Pytorch).
 
